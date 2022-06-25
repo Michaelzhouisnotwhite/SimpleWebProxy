@@ -3,9 +3,24 @@
 //
 
 #include "SocketUtils.h"
+#include "SocketException.h"
 
 void hello_common() {
     printf("HELLO COMMON\n");
+}
+
+int SocketInit() {
+    WSADATA wsaData;
+    int iRes = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (iRes != 0) {
+        printf("WSAStartup failed: %d\n", iRes);
+        return SOCKET_RUNTIME_ERROR;
+    }
+    return SOCKET_RUNTIME_SUCCESS;
+}
+
+SOCKET SocketTcpCreate(struct addrinfo config) {
+    return socket(config.ai_family, config.ai_socktype, config.ai_protocol);
 }
 
 int test_server() {
@@ -24,7 +39,10 @@ int test_server() {
     hints.ai_family = AF_INET;      // IPv4
     hints.ai_socktype = SOCK_STREAM;// 流套接字
     hints.ai_protocol = IPPROTO_TCP;// TCP Protocol
-    //当将AI_PASSIVE标志设置为 getaddrinfo 函数的 nodename 参数为 NULL 指针时，
+    // AI_PASSIVE flag indicates the caller intends to use the returned socket address structure in a call to the bind function. 
+    // When the AI_PASSIVE flag is set and nodename parameter to the getaddrinfo function is a NULL pointer,
+    // the IP address portion of the socket address structure is set to INADDR_ANY for IPv4 addresses or IN6ADDR_ANY_INIT for IPv6 addresses.
+    // 当将AI_PASSIVE标志设置为 getaddrinfo 函数的 nodename 参数为 NULL 指针时，
     // 套接字地址结构的 IP 地址部分设置为INADDR_ANY IPv4 地址或 IPv6 地址的IN6ADDR_ANY_INIT。
     hints.ai_flags = AI_PASSIVE;
 
@@ -39,6 +57,7 @@ int test_server() {
 
     // 侦听客户端连接
     SOCKET ListenSocket = INVALID_SOCKET;
+
     ListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
 
     // Check Listening Errors
@@ -128,7 +147,7 @@ int test_server() {
     return 0;
 }
 
-int test_client(int argc, char *argv[]) {
+int test_client(int argc,const char *argv[]) {
     WSADATA wsaData;
     SOCKET ConnectSocket = INVALID_SOCKET;
     struct addrinfo *result = NULL,
@@ -139,7 +158,7 @@ int test_client(int argc, char *argv[]) {
     const int DEFAULT_BUFLEN = 512;
 
     const char *DEFAULT_PORT = "27015";
-    
+
     char recvbuf[DEFAULT_BUFLEN];
     int iResult;
     int recvbuflen = DEFAULT_BUFLEN;
@@ -158,7 +177,7 @@ int test_client(int argc, char *argv[]) {
     }
 
     ZeroMemory(&hints, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 

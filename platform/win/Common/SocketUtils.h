@@ -15,9 +15,26 @@
 #include <stdio.h>
 
 #pragma comment(lib, "Ws2_32.lib")
+#pragma comment (lib, "Mswsock.lib")
+#pragma comment (lib, "AdvApi32.lib")
 
 void hello_common();
 
+
+/**
+ * @brief Init socket to match the version socket 2.2
+ * 
+ * @return int 
+ */
+int SocketInit();
+
+/**
+ * @brief Create a protocol of tcp socket
+ * 
+ * @return SOCKET 
+ */
+SOCKET SocketTcpCreate(struct addrinfo config);
+
 int test_server();
-int test_client(int argc, char* argv[]);
+int test_client(int argc, const char* argv[]);
 #endif //SIMPLEWEBPROXY_SOCKETUTILS_H
