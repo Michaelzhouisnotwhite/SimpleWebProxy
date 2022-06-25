@@ -18,6 +18,6 @@
 
 void hello_common();
 
-
-
+int test_server();
+int test_client(int argc, char* argv[]);
 #endif //SIMPLEWEBPROXY_SOCKETUTILS_H

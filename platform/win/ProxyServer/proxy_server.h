@@ -3,5 +3,5 @@
 //
 #pragma once
 #include <stdio.h>
-void server_func();
+int server_func();
 
