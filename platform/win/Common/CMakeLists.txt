@@ -1,11 +1,14 @@
 project(Common)
-add_library(${PROJECT_NAME} SocketUtils.c)
+add_library(${PROJECT_NAME} SocketUtils.c common.c)
 add_library(lib::common ALIAS ${PROJECT_NAME})
+list(APPEND INCLUDES "${SimpleWebProxy_SOURCE_DIR}/TryCatch")
 
 if (MINGW)
     list(APPEND wins_libs ws2_32)
     list(APPEND wins_libs Mswsock)
     list(APPEND wins_libs AdvApi32)
     target_link_libraries(${PROJECT_NAME} PRIVATE ${wins_libs})
-    message(STATUS "socket libs: ${wins_libs}")
+    message(STATUS "[LOG] socket libs: ${wins_libs}")
 endif()
+
+target_include_directories(${PROJECT_NAME} PRIVATE ${INCLUDES})

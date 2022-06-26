@@ -1,0 +1,8 @@
+//
+// Created by michael on 2022/6/27.
+//
+
+#ifndef SIMPLEWEBPROXY_COMMON_H
+#define SIMPLEWEBPROXY_COMMON_H
+
+#endif //SIMPLEWEBPROXY_COMMON_H

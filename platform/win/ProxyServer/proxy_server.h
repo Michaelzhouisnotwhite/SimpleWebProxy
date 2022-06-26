@@ -4,20 +4,20 @@
 #pragma once
 #include <stdio.h>
 #include "SocketUtils.h"
-int server_func();
+typedef struct thread_args{
+    SOCKET clientSocket;
+    struct sockaddr_in addr_info;
+    pthread_mutex_t mux;
+}thread_args;
 
-/**
- * @brief Init a port to start server 
- * @param ResSocket The result of Init socket
- * @param port (const char*)
- * @return int: Static Code
- */
-int ServerInit(SOCKET *ResSocket, const char* port);
-int ServerStart(SOCKET *listenSocket);
+int ServerStart(const char* port);
 
 /**
  * @brief handle clients
  * TODO: complete the references
  * @return int 
  */
-int ServerHandleClient(SOCKET, struct sockaddr, int);
+void ServerHandleClient(thread_args* args);
+void ServerLoop(SOCKET serverSocket);
+int SocketRecv(SOCKET socketId, char** recvBuf, int* resBufLen, pthread_mutex_t *MemoryMutex);
+int ServerForward(SOCKET sockId, char *clientBuf, int clientBufLen, int* clientBufPtr);

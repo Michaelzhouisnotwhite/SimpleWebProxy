@@ -12,12 +12,16 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <iphlpapi.h>
+#include <pthread.h>
 #include <stdio.h>
 
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment (lib, "Mswsock.lib")
 #pragma comment (lib, "AdvApi32.lib")
 
+#ifndef RECV_BUFLEN
+#define RECV_BUFLEN 50
+#endif
 void hello_common();
 
 
@@ -33,8 +37,9 @@ int SocketInit();
  * 
  * @return SOCKET 
  */
-SOCKET SocketTcpCreate(struct addrinfo config);
+SOCKET SocketTcpCreate();
 
-int test_server();
-int test_client(int argc, const char* argv[]);
+int SocketListening(const char* port, SOCKET *ResSocket);
+void ClearBuf(char** buffer);
+
 #endif //SIMPLEWEBPROXY_SOCKETUTILS_H
