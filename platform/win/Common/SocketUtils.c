@@ -4,7 +4,6 @@
 
 #include "SocketUtils.h"
 #include "SocketException.h"
-#include "try_catch.h"
 
 void hello_common() {
     printf("HELLO COMMON\n");
@@ -20,12 +19,7 @@ int SocketInit() {
     return SOCKET_RUNTIME_SUCCESS;
 }
 
-SOCKET SocketTcpCreate() {
-    return socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-}
-
 int SocketListening(const char *port, SOCKET *ResSocket) {
-    SOCKET listenSocket = SocketTcpCreate();
 
     struct addrinfo hints, *addr_result;
     ZeroMemory(&hints, sizeof hints);
@@ -43,34 +37,85 @@ int SocketListening(const char *port, SOCKET *ResSocket) {
         WSACleanup();
         return SOCKET_RUNTIME_ERROR;
     }
+    SOCKET listenSocket = socket(addr_result->ai_family, addr_result->ai_socktype, addr_result->ai_protocol);
 
     nRes = bind(listenSocket, addr_result->ai_addr, (int) addr_result->ai_addrlen);
+
     if (nRes == SOCKET_ERROR) {
         printf("bind failed with error: %d\n", WSAGetLastError());
-        closesocket(listenSocket);
-        WSACleanup();
-        return SOCKET_BIND_ERROR;
+        goto Error;
     }
     // Listen
     if (listen(listenSocket, SOMAXCONN) == SOCKET_ERROR) {
         printf("Listen failed with error: %ld\n", WSAGetLastError());
-        closesocket(listenSocket);
-        WSACleanup();
-        return SOCKET_LISTENING_ERROR;
+        goto Error;
     }
 
     *ResSocket = listenSocket;
     return SOCKET_RUNTIME_SUCCESS;
+
+Error:
+    closesocket(listenSocket);
+    WSACleanup();
+    return SOCKET_RUNTIME_ERROR;
 }
+base_config SocketConnect(host_info_s host_info) {
 
 
-void ClearBuf(char **buffer) {
-    if (buffer != NULL) {
-        free(*buffer);
+    struct addrinfo hints,
+                    *result = NULL,
+                    *ptr    = NULL;
+
+    int result_label;
+
+
+    if (strlen(host_info.name) == 0) {
+        goto Failed;
     }
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family   = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    result_label = getaddrinfo(host_info.name, host_info.port, &hints, &result);
+    if (result_label != 0) {
+        goto Failed;
+    }
+    SOCKET host_sock = INVALID_SOCKET;
+    for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
+        host_sock = socket(ptr->ai_family, ptr->ai_socktype, ptr->ai_protocol);
+
+        if (host_sock == INVALID_SOCKET) {
+            goto Failed;
+        }
+
+        result_label = connect(host_sock, ptr->ai_addr, (int) ptr->ai_addrlen);
+
+        if (result_label == SOCKET_ERROR) {
+            closesocket(host_sock);
+            host_sock = INVALID_SOCKET;
+            continue;
+        }
+        break;
+    }
+
+    freeaddrinfo(result);
+    if (host_sock == INVALID_SOCKET) {
+        closesocket(host_sock);
+        goto Failed;
+    }
+
+    base_config conn_config = base_config_init();
+
+    conn_config.sock_host = host_sock;
+    return conn_config;
+
+Failed:
+    freeaddrinfo(result);
+    return base_config_init();
 }
 
-int SocketRecv(http_base_config_t config_t, pthread_mutex_t *MemoryMutex) {
+int SocketRecv(base_config_t config_t, pthread_mutex_t *MemoryMutex) {
     int  nRes;
     char buf[RECV_BUFLEN] = {0};
 
@@ -97,11 +142,11 @@ int SocketRecv(http_base_config_t config_t, pthread_mutex_t *MemoryMutex) {
     return SOCKET_RUNTIME_SUCCESS;
 }
 
-int SocketSend(http_base_config sender) {
+int SocketSend(base_config sender, int len) {
     if (sender.pipe == NULL) {
         goto Fail;
     }
-    int res_code = send(sender.sock_host, sender.pipe->ch, (int) sender.pipe->len, 0);
+    int res_code = send(sender.sock_host, sender.pipe->ch, len, 0);
     if (res_code == SOCKET_ERROR) {
         goto Fail;
     }

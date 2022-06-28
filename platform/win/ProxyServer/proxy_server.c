@@ -8,53 +8,57 @@
 
 
 void ServerHandleClient(handle_client_args *args) {
-    http_client_config clientConfig = hcc_init();
+    client_config clientConfig = client_config_init();
+    clientConfig.super_config.sock_host = args->clientSocket;
 
-    clientConfig.http.sock_host = args->clientSocket;
     struct sockaddr_in addr        = args->addr_info;
     pthread_mutex_t    MemoryMutex = args->mux;
 
-    printf("addr: %s:", inet_ntoa(addr.sin_addr));
-    printf("%d\n", addr.sin_port);
+    printf("[*] %s:", inet_ntoa(addr.sin_addr));
+    printf("%d => ", addr.sin_port);
 
     while (1) {
-        RUNTIME_CODE rCode = SocketRecv(&clientConfig.http, &MemoryMutex);
+        RUNTIME_CODE rCode = SocketRecv(&clientConfig.super_config, &MemoryMutex);
         if (rCode == SOCKET_RUNTIME_ERROR) {
-            closesocket(clientConfig.http.sock_host);
+            closesocket(clientConfig.super_config.sock_host);
             return;
         } else if (rCode == SOCKET_RECEIVE_END) {
 
         }
 
-        printf("Bytes received length: %d\n", clientConfig.http.pipe->len);
-
         if (strlen(clientConfig.host.name) == 0) {
-            rCode = GetHostName(clientConfig.http.pipe, &clientConfig.host);
+            rCode = GetHostName(clientConfig.super_config.pipe, &clientConfig.host);
             if (rCode != 0) {
                 ZeroMemory(&clientConfig.host, sizeof(clientConfig.host));
                 continue;
             }
-            printf("Host name: <%s>", clientConfig.host.name);
-            printf("port: [%s]\n", clientConfig.host.port);
+            // TODO(It only can run once)
+            printf("%s", clientConfig.host.name);
+            printf(":[%s] ", clientConfig.host.port);
+//            printf("%d bytes\n", clientConfig.super_config.pipe->len);
         }
 
-        http_base_config hostConfig = HttpConnect(clientConfig);
-        if (0 != check_http_config(hostConfig)) {
+        base_config hostConfig = SocketConnect(clientConfig.host);
+        if (0 != check_base_config(hostConfig)) {
             ZeroMemory(&clientConfig.host, sizeof(clientConfig.host));
             continue;
         }
-        hostConfig.pipe = clientConfig.http.pipe;
-        rCode = SocketSend(hostConfig);
+        hostConfig.pipe = clientConfig.super_config.pipe;
+        rCode = SocketSend(hostConfig, (int) hostConfig.pipe->len);
         if (0 != rCode) {
-            closesocket(clientConfig.http.sock_host);
+            closesocket(clientConfig.super_config.sock_host);
             closesocket(hostConfig.sock_host);
-            shutdown(clientConfig.http.sock_host, SD_SEND);
+            shutdown(clientConfig.super_config.sock_host, SD_SEND);
             return;
         }
         pthread_t           thread;
-        handle_pipline_args hp_args = {hostConfig.sock_host, clientConfig.http.sock_host, MemoryMutex};
+        handle_pipline_args hp_args = {
+                hostConfig.sock_host,
+                clientConfig.super_config.sock_host,
+                MemoryMutex
+        };
         pthread_create(&thread, NULL, (void *(*)(void *)) ServerPipline, &hp_args);
-        FreeByteString(&clientConfig.http.pipe);
+        FreeByteString(&clientConfig.super_config.pipe);
         hostConfig.pipe = NULL;
     }
 }
@@ -92,9 +96,7 @@ void ServerLoop(SOCKET serverSocket) {
         handle_client_args args;
         args.clientSocket = clientSocket;
         args.addr_info    = addr;
-        //        ServerHandleClient(&args);
-
-        args.mux = MemoryMutex;
+        args.mux          = MemoryMutex;
         int rc = pthread_create(&thread, NULL, (void *(*)(void *)) ServerHandleClient, (void *) &args);
         if (rc) {
             printf("Error:unable to create thread, %d\n", rc);
@@ -104,94 +106,17 @@ void ServerLoop(SOCKET serverSocket) {
     pthread_mutex_destroy(&MemoryMutex);
 }
 
-int ServerForward(SOCKET sockId, char *clientBuf, int clientBufLen) {
-    int iRes;
-    iRes = send(sockId, clientBuf, clientBufLen, 0);
-    if (iRes == SOCKET_ERROR) {
-        printf("send failed with error: %d\n", WSAGetLastError());
-        //        closesocket(sockId);
-        return 1;
-    }
-    return 0;
-}
-
-
-void ConnectHost(SOCKET *connectSocket, char *host_name) {
-    struct addrinfo hints, *result = NULL;
-    ZeroMemory(&hints, sizeof(hints));
-
-    hints.ai_family   = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
-
-    int  iResult;
-    char *res = StrStrim(host_name);
-    iResult = getaddrinfo(res, "80", &hints, &result);
-    if (iResult != 0) {
-        printf("getaddrinfo failed with error: %d\n", iResult);
-        return;
-    }
-    *connectSocket = INVALID_SOCKET;
-    // Attempt to connect to an address until one succeeds
-    for (struct addrinfo *ptr = result; ptr != NULL; ptr = ptr->ai_next) {
-        // Create a SOCKET for connecting to server
-        *connectSocket = socket(ptr->ai_family, ptr->ai_socktype,
-                                ptr->ai_protocol);
-        if (*connectSocket == INVALID_SOCKET) {
-            printf("socket failed with error: %ld\n", WSAGetLastError());
-            return;
-        }
-        // Connect to server.
-        iResult = connect(*connectSocket, ptr->ai_addr, (int) ptr->ai_addrlen);
-        if (iResult == SOCKET_ERROR) {
-            closesocket(*connectSocket);
-            *connectSocket = INVALID_SOCKET;
-            continue;
-        }
-        break;
-    }
-    freeaddrinfo(result);
-    if (*connectSocket == INVALID_SOCKET) {
-        printf("Unable to connect to server!\n");
-    }
-}
-
-int GetContentLength(char *recvBuf) {
-    StrList *result     = FindSubStr(recvBuf, "\r\n");
-    int     content_len = 0;
-    if (result->length > 5) {
-        for (int i = 0; i < result->length; ++i) {
-            StrList *sub_res = FindSubStr(result->list[i], "Content-Length:");
-            if (sub_res->length > 1) {
-                char *cl = StrStrim(sub_res->list[1]);
-                //                char * temp;
-                content_len = strtol(cl, NULL, 10);
-                FreeStrList(&sub_res);
-                break;
-            } else {
-                FreeStrList(&sub_res);
-            }
-        }
-    }
-    FreeStrList(&result);
-    return content_len;
-}
-
-http_transform_pipe_s httpTransformPipeSCreate() {
-    http_transform_pipe_s new;
-    new.receiver       = hbc_init();
-    new.sender_sock_id = INVALID_SOCKET;
-    return new;
-}
 
 void ServerPipline(handle_pipline_args *args) {
-    http_base_config hostConfig = hbc_init();
+    base_config hostConfig = base_config_init();
     hostConfig.sock_host = args->hostSocket;
 
-    http_base_config clientConfig = hbc_init();
+    base_config clientConfig = base_config_init();
     clientConfig.sock_host = args->clientSocket;
     int rCode;
     printf("Respond :");
+
+    int header_length = -1;
     while (1) {
         rCode = SocketRecv(&hostConfig, &args->mux);
         if (rCode == SOCKET_RUNTIME_ERROR) {
@@ -203,16 +128,68 @@ void ServerPipline(handle_pipline_args *args) {
             return;
         }
         clientConfig.pipe = hostConfig.pipe;
-        printf("%s", clientConfig.pipe->ch);
-        rCode = SocketSend(clientConfig);
+//        printf("%s", clientConfig.pipe->ch);
+        rCode = SocketSend(clientConfig, (int) clientConfig.pipe->len);
         if (0 != rCode) {
-            closesocket(clientConfig.sock_host);
-            closesocket(hostConfig.sock_host);
-            shutdown(clientConfig.sock_host, SD_SEND);
-            FreeByteString(&hostConfig.pipe);
-            return;
+            goto send_err;
         }
         FreeByteString(&hostConfig.pipe);
         clientConfig.pipe = NULL;
+        continue;
+
+        // TODO: FIX THIS!!
+        if (clientConfig.is_chunked == INVALID_CHUNK) {
+            rCode = check_http_header(&clientConfig);
+            if (rCode != 0) {
+                continue;
+            }
+        }
+
+        if (clientConfig.is_chunked) {
+            if (header_length == -1) {
+                header_length = get_header_length(clientConfig.pipe);
+                if (header_length == -1) {
+                    continue;
+                }
+            }
+            if (header_length > 0) {
+                rCode = SocketSend(clientConfig, header_length);
+                if (0 != rCode) {
+                    goto send_err;
+                }
+                rCode = ByteStrPopFront(hostConfig.pipe, header_length);
+                clientConfig.pipe = hostConfig.pipe;
+                if (rCode != 0) {
+                    goto send_err;
+                }
+                header_length = -2;
+            }
+//            continue;
+            int chunk_buffer_len = check_chunk_buffer(clientConfig.pipe);
+            if (chunk_buffer_len == INVALID_CHUNK) {
+                continue;
+            } else {
+                rCode = SocketSend(clientConfig, chunk_buffer_len);
+                if (0 != rCode) {
+                    goto send_err;
+                }
+                rCode = ByteStrPopFront(hostConfig.pipe, chunk_buffer_len);
+                if (rCode != 0) {
+                    goto send_err;
+                }
+            }
+        } else {
+            rCode = SocketSend(clientConfig, (int) clientConfig.pipe->len);
+            if (0 != rCode) {
+                goto send_err;
+            }
+            FreeByteString(&hostConfig.pipe);
+            clientConfig.pipe = NULL;
+        }
     }
+send_err:
+    closesocket(clientConfig.sock_host);
+    closesocket(hostConfig.sock_host);
+    shutdown(clientConfig.sock_host, SD_SEND);
+    FreeByteString(&hostConfig.pipe);
 }

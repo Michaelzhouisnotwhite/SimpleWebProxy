@@ -8,12 +8,8 @@
 #include <ctype.h>
 
 
-StrList *SubStrListNew(const char *origin);
-
-void StrListAdd(StrList *, const char *, size_t);
-
-StrList *SubStrListNew(const char *origin) {
-    size_t  charSize   = ((origin) ? strlen(origin) : 0) + 1;
+StrList *SubStrListNew(const char *origin, size_t _origin_len) {
+    size_t  charSize   = ((origin) ? _origin_len : 0) + 1;
     size_t  mallocSize = charSize + sizeof(StrList);
     StrList *new       = (StrList *) calloc(mallocSize, BYTE_SIZE);
 
@@ -22,7 +18,7 @@ StrList *SubStrListNew(const char *origin) {
         exit(-1);
     }
     if (origin) {
-        strcpy(new->origin, origin);
+        memcpy(new->origin, origin, _origin_len);
     }
     return new;
 }
@@ -41,8 +37,8 @@ void StrListAdd(StrList *str_list, const char *data, const size_t data_len) {
     str_list->length++;
 }
 
-StrList *FindSubStr(const char *origin, const char *substr) {
-    StrList *subStrChain = SubStrListNew(origin);
+StrList *FindSubStr(const char *origin, size_t origin_len, const char *substr) {
+    StrList *subStrChain = SubStrListNew(origin, origin_len);
     size_t  ptr;
     char    *temp        = subStrChain->origin;
     while (temp != NULL) {
@@ -54,7 +50,8 @@ StrList *FindSubStr(const char *origin, const char *substr) {
         } else {
             StrListAdd(subStrChain, temp, strlen(temp));
         }
-        temp         = remain;
+
+        temp = remain;
     }
     return subStrChain;
 }
@@ -99,7 +96,7 @@ ByteString *ByteStringNew(const char *data, size_t _len) {
     pString->_msize = dataSize + sizeof(ByteString);
     if (data) {
         memcpy(pString->ch, data, _len);
-        pString->len = strlen(pString->ch);
+        pString->len = _len;
     }
     return pString;
 }
@@ -145,15 +142,19 @@ void FreeByteString(ByteString **byte_list) {
     }
 }
 
-//char *ByteStrPopFront(ByteString *byte_str, size_t len) {
-//    char *out_pipe = calloc(len, BYTE_SIZE);
-//    if (out_pipe == NULL) {
-//        printf("Malloc Size ERROR\n");
-//        return NULL;
-//    }
-//    if (len >= byte_str->len) {
-//        memcpy(out_pipe, byte_str->ch, byte_str->len);
-//
-//    }
-//
-//}
+int ByteStrPopFront(ByteString *byte_str, size_t len) {
+    char *temp = calloc(byte_str->_msize, BYTE_SIZE);
+    if (temp == NULL) {
+        return 1;
+    }
+    memcpy(temp, byte_str->ch + len, byte_str->_msize - len);
+    memcpy(byte_str->ch, temp, byte_str->_msize);
+
+    byte_str->len -= len;
+    free(temp);
+    return 0;
+}
+
+
+
+

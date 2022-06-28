@@ -13,6 +13,12 @@
 #define ERROR_CODE int
 #define ByteListError (-1)
 
+typedef struct ByteString {
+    size_t len;
+    size_t _msize;
+    char   ch[];
+} ByteString;
+
 typedef struct StrList {
     char   **list;
     size_t _msize;
@@ -21,22 +27,17 @@ typedef struct StrList {
 } StrList;
 
 
-typedef struct ByteString {
-    size_t len;
-    size_t _msize;
-    char   ch[];
-} ByteString;
 
 ERROR_CODE ByteStringAdd(ByteString **_dst, const char *_src, size_t _len);
 
 void FreeByteString(ByteString **byte_list);
 
-StrList *FindSubStr(const char *origin, const char *substr);
+StrList *FindSubStr(const char *origin, size_t origin_len, const char *substr);
 
 void FreeStrList(StrList **pList);
 
 char *StrStrim(char *str);
 
-//char* ByteStrPopFront(ByteString *byte_str, size_t len);
+int ByteStrPopFront(ByteString *byte_str, size_t len);
 
 #endif //SIMPLEWEBPROXY_LIB4STR_H

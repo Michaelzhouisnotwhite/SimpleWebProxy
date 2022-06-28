@@ -14,31 +14,38 @@
 #include <stdio.h>
 
 #define HOST_NAME_MAX_LEN 300
-
+#define HTTP_TRANSFER_TYPE int
+#define HTTP_HEADER_LEN int
+#define INVALID_CHUNK -1
 
 typedef struct {
     SOCKET     sock_host;
     ByteString *pipe;
-} *http_base_config_t, http_base_config;
+    HTTP_TRANSFER_TYPE is_chunked;
+} *base_config_t, base_config;
 
 typedef struct {
     char name[HOST_NAME_MAX_LEN];
     char port[5];
-}host_db_s;
+} host_info_s;
 
-typedef struct HttpClientConfig {
-    http_base_config http;
-    host_db_s host;
-} http_client_config, *http_client_config_t;
+typedef struct httpClientConfig {
+    base_config super_config;
+    host_info_s host;
+} client_config, *client_config_t;
 
-int GetHostName(ByteString *recvBuf, host_db_s *hostDbS);
+int GetHostName(ByteString *recvBuf, host_info_s *host_info);
 
-http_base_config hbc_init();
+base_config base_config_init();
 
-http_base_config HttpConnect(http_client_config config);
+int check_base_config(base_config config);
 
-int check_http_config(http_base_config config);
+client_config client_config_init();
 
-http_client_config hcc_init();
+int check_http_header(base_config_t config);
+
+int check_chunk_buffer(ByteString *http_buffer);
+
+int get_header_length(ByteString *http_buffer);
 
 #endif //SIMPLEWEBPROXY_LIB4HTTP_H

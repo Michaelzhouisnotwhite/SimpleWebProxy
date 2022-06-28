@@ -15,22 +15,17 @@ typedef struct {
 } handle_client_args;
 
 typedef struct {
-    SOCKET hostSocket;
-    SOCKET clientSocket;
+    SOCKET          hostSocket;
+    SOCKET          clientSocket;
     pthread_mutex_t mux;
-}handle_pipline_args;
+} handle_pipline_args;
 
-typedef struct {
-    http_base_config receiver;
-    SOCKET sender_sock_id;
-}http_transform_pipe_s;
 
 int ServerStart(const char *port);
 
 /**
  * @brief handle clients
- * TODO: complete the references
- * @return int 
+ * @return int
  */
 void ServerHandleClient(handle_client_args *args);
 

@@ -22,7 +22,7 @@
 #pragma comment (lib, "AdvApi32.lib")
 
 #ifndef RECV_BUFLEN
-#define RECV_BUFLEN 8102
+#define RECV_BUFLEN 8192
 #endif
 
 #define MAX_HEADER_LEN 8192
@@ -34,17 +34,12 @@
  */
 int SocketInit();
 
-/**
- * @brief Create a protocol of tcp socket
- * 
- * @return SOCKET 
- */
-SOCKET SocketTcpCreate();
+int SocketListening(const char *port, SOCKET *ResSocket);
 
-int SocketListening(const char* port, SOCKET *ResSocket);
-int SocketRecv(http_base_config_t config_t, pthread_mutex_t *MemoryMutex);
+int SocketRecv(base_config_t config_t, pthread_mutex_t *MemoryMutex);
 
-int SocketSend(http_base_config sender);
-void ClearBuf(char** buffer);
+base_config SocketConnect(host_info_s host_info);
+
+int SocketSend(base_config sender, int len);
 
 #endif //SIMPLEWEBPROXY_SOCKETUTILS_H
