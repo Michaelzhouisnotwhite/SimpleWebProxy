@@ -6,6 +6,8 @@
 #define SOCKET_RUNTIME_SUCCESS 0x0
 #define SOCKET_LISTENING_ERROR -2
 #define SOCKET_BIND_ERROR -3
+
+#define SOCKET_RECEIVE_END -10086
 #define RUNTIME_CODE int
 
 #endif

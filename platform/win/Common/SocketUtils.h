@@ -15,12 +15,14 @@
 #include <pthread.h>
 #include <stdio.h>
 
+#include "lib4http.h"
+
 #pragma comment(lib, "Ws2_32.lib")
 #pragma comment (lib, "Mswsock.lib")
 #pragma comment (lib, "AdvApi32.lib")
 
 #ifndef RECV_BUFLEN
-#define RECV_BUFLEN 100
+#define RECV_BUFLEN 8102
 #endif
 
 #define MAX_HEADER_LEN 8192
@@ -40,6 +42,9 @@ int SocketInit();
 SOCKET SocketTcpCreate();
 
 int SocketListening(const char* port, SOCKET *ResSocket);
+int SocketRecv(http_base_config_t config_t, pthread_mutex_t *MemoryMutex);
+
+int SocketSend(http_base_config sender);
 void ClearBuf(char** buffer);
 
 #endif //SIMPLEWEBPROXY_SOCKETUTILS_H

@@ -13,9 +13,9 @@ StrList *SubStrListNew(const char *origin);
 void StrListAdd(StrList *, const char *, size_t);
 
 StrList *SubStrListNew(const char *origin) {
-    size_t charSize = ((origin) ? strlen(origin) : 0) + 1;
-    size_t mallocSize = charSize + sizeof(StrList);
-    StrList *new = (StrList *) calloc(mallocSize, BYTE_SIZE);
+    size_t  charSize   = ((origin) ? strlen(origin) : 0) + 1;
+    size_t  mallocSize = charSize + sizeof(StrList);
+    StrList *new       = (StrList *) calloc(mallocSize, BYTE_SIZE);
 
     if (!new) {
         printf("Malloc failed.");
@@ -32,10 +32,10 @@ void StrListAdd(StrList *str_list, const char *data, const size_t data_len) {
     memcpy(new, data, data_len);
     if (str_list->list == NULL) {
         str_list->_msize = 1;
-        str_list->list = (char **) calloc(str_list->_msize, sizeof(char **));
+        str_list->list   = (char **) calloc(str_list->_msize, sizeof(char **));
     } else if (str_list->length >= str_list->_msize) {
         str_list->_msize = str_list->length * 2;
-        str_list->list = realloc(str_list->list, str_list->_msize * sizeof(char **));
+        str_list->list   = realloc(str_list->list, str_list->_msize * sizeof(char **));
     }
     str_list->list[str_list->length] = new;
     str_list->length++;
@@ -43,10 +43,9 @@ void StrListAdd(StrList *str_list, const char *data, const size_t data_len) {
 
 StrList *FindSubStr(const char *origin, const char *substr) {
     StrList *subStrChain = SubStrListNew(origin);
-    size_t ptr;
-    char *temp = subStrChain->origin;
+    size_t  ptr;
+    char    *temp        = subStrChain->origin;
     while (temp != NULL) {
-        // TODO: continue find strstr
         char *remain = strstr(temp, substr);
         if (remain != NULL) {
             ptr = remain - temp;
@@ -55,7 +54,7 @@ StrList *FindSubStr(const char *origin, const char *substr) {
         } else {
             StrListAdd(subStrChain, temp, strlen(temp));
         }
-        temp = remain;
+        temp         = remain;
     }
     return subStrChain;
 }
@@ -63,8 +62,8 @@ StrList *FindSubStr(const char *origin, const char *substr) {
 void FreeStrList(StrList **pList) {
     if (pList != NULL) {
         if ((*pList)->list != NULL) {
-            char **tempList = (*pList)->list;
-            for (size_t i = 0; i < (*pList)->length; i++) {
+            char        **tempList = (*pList)->list;
+            for (size_t i          = 0; i < (*pList)->length; i++) {
                 free(tempList[i]);
                 tempList[i] = NULL;
             }
@@ -77,11 +76,10 @@ void FreeStrList(StrList **pList) {
 }
 
 char *StrStrim(char *str) {
-    char *end, *sp, *ep;
+    char   *end = str + strlen(str) - 1,
+           *sp  = str,
+           *ep  = end;
     size_t len;
-    sp = str;
-    end = str + strlen(str) - 1;
-    ep = end;
 
     while (sp <= end && isspace(*sp))// *sp == ' '也可以
         sp++;
@@ -93,7 +91,7 @@ char *StrStrim(char *str) {
 }
 
 ByteString *ByteStringNew(const char *data, size_t _len) {
-    size_t dataSize = ((data) ? _len : 0) + 1;
+    size_t     dataSize = ((data) ? _len : 0) + 1;
     ByteString *pString = calloc(dataSize + sizeof(ByteString), BYTE_SIZE);
     if (pString == NULL) {
         return NULL;
@@ -122,8 +120,8 @@ ERROR_CODE ByteStringAdd(ByteString **_dst, const char *_src, size_t _len) {
         if (remain >= _len) {
 //            memcpy((*_dst)->ch + (*_dst)->len, _src, _len);
         } else {
-            size_t dataSize = _len + (*_dst)->len;
-            size_t msize = dataSize * 2 + 1;
+            size_t     dataSize = _len + (*_dst)->len;
+            size_t     msize    = dataSize * 2 + 1;
             ByteString *pString = calloc(msize + sizeof(ByteString), BYTE_SIZE);
             if (pString == NULL) {
                 return ByteListError;
@@ -143,6 +141,7 @@ ERROR_CODE ByteStringAdd(ByteString **_dst, const char *_src, size_t _len) {
 void FreeByteString(ByteString **byte_list) {
     if (byte_list != NULL) {
         free(*byte_list);
+        *byte_list = NULL;
     }
 }
 

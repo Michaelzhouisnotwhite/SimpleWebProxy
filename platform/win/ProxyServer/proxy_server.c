@@ -7,82 +7,55 @@
 #include <pthread.h>
 
 
-int SocketRecv(http_client_config_t config_t, pthread_mutex_t *MemoryMutex) {
-    int  nRes;
-    char buf[RECV_BUFLEN] = {0};
+void ServerHandleClient(handle_client_args *args) {
+    http_client_config clientConfig = hcc_init();
 
-    pthread_mutex_lock(MemoryMutex);
-//    *recvBuf = (char *) calloc(RECV_BUFLEN, sizeof(char));
-    pthread_mutex_unlock(MemoryMutex);
+    clientConfig.http.sock_host = args->clientSocket;
+    struct sockaddr_in addr        = args->addr_info;
+    pthread_mutex_t    MemoryMutex = args->mux;
 
-    int recvBufLen = RECV_BUFLEN;
-    int recvBufPtr = 0;
-    do {
-        nRes = recv(config_t->http.sock_host, buf, RECV_BUFLEN - 1, 0);
-        if (nRes > 0) {
-            int recvBufRemain = recvBufLen - recvBufPtr;
-            if (recvBufRemain >= nRes) {
+    printf("addr: %s:", inet_ntoa(addr.sin_addr));
+    printf("%d\n", addr.sin_port);
 
-                pthread_mutex_lock(MemoryMutex);
-                ByteStringAdd(&(config_t->http.pipe), buf, nRes);
-                pthread_mutex_unlock(MemoryMutex);
+    while (1) {
+        RUNTIME_CODE rCode = SocketRecv(&clientConfig.http, &MemoryMutex);
+        if (rCode == SOCKET_RUNTIME_ERROR) {
+            closesocket(clientConfig.http.sock_host);
+            return;
+        } else if (rCode == SOCKET_RECEIVE_END) {
 
-            } else {
-                recvBufLen *= 2;
-                pthread_mutex_lock(MemoryMutex);
-                char *newBuf = (char *) calloc(recvBufLen, sizeof(char));
-                pthread_mutex_unlock(MemoryMutex);
+        }
 
-                pthread_mutex_lock(MemoryMutex);
-                memcpy(newBuf, *recvBuf, recvBufPtr);
-                memcpy(newBuf + recvBufPtr, buf, nRes);
-                pthread_mutex_unlock(MemoryMutex);
+        printf("Bytes received length: %d\n", clientConfig.http.pipe->len);
 
-                recvBufPtr += nRes;
-                free(*recvBuf);
-                *recvBuf   = newBuf;
-                *resBufLen = recvBufPtr;
+        if (strlen(clientConfig.host.name) == 0) {
+            rCode = GetHostName(clientConfig.http.pipe, &clientConfig.host);
+            if (rCode != 0) {
+                ZeroMemory(&clientConfig.host, sizeof(clientConfig.host));
+                continue;
             }
-        } else if (nRes == 0) {
-            printf("[LOG] End of Receiving\n");
-            *resBufLen = recvBufPtr;
-            break;
-        } else {
-            printf("[LOG] Receive Error.\n");
-            return SOCKET_RUNTIME_ERROR;
+            printf("Host name: <%s>", clientConfig.host.name);
+            printf("port: [%s]\n", clientConfig.host.port);
         }
-    } while (nRes > 0);
-    return SOCKET_RUNTIME_SUCCESS;
-}
 
-void ServerHandleClient(thread_args *args) {
-    SOCKET             clientSocket = args->clientSocket;
-    struct sockaddr_in addr         = args->addr_info;
-    pthread_mutex_t    MemoryMutex  = args->mux;
-    char               *recvBuf;
-    int                recvBufLen;
-
-    // TODO FIX:
-//    RUNTIME_CODE       rCode        = SocketRecv(clientSocket,
-//                                                 &recvBuf,
-//                                                 &recvBufLen,
-//                                                 &MemoryMutex);
-    if (rCode == SOCKET_RUNTIME_ERROR) {
-        closesocket(clientSocket);
-    }
-    printf("Bytes received length: %d\n", recvBufLen);
-    printf("addr: %s\n", inet_ntoa(addr.sin_addr));
-    printf("addr port: %d\n", addr.sin_port);
-    printf("recv: \n%s\n", recvBuf);
-    ClearBuf(&recvBuf);
-
-    if (rCode != SOCKET_RUNTIME_ERROR) {
-        int nRes = shutdown(clientSocket, SD_SEND);
-        if (nRes == SOCKET_ERROR) {
-            printf("shutdown failed with error: %d\n", WSAGetLastError());
-            closesocket(clientSocket);
+        http_base_config hostConfig = HttpConnect(clientConfig);
+        if (0 != check_http_config(hostConfig)) {
+            ZeroMemory(&clientConfig.host, sizeof(clientConfig.host));
+            continue;
         }
-        closesocket(clientSocket);
+        hostConfig.pipe = clientConfig.http.pipe;
+        rCode = SocketSend(hostConfig);
+        if (0 != rCode) {
+            closesocket(clientConfig.http.sock_host);
+            closesocket(hostConfig.sock_host);
+            shutdown(clientConfig.http.sock_host, SD_SEND);
+            return;
+        }
+        pthread_t           thread;
+        handle_pipline_args hp_args = {hostConfig.sock_host, clientConfig.http.sock_host, MemoryMutex};
+        pthread_create(&thread, NULL, (void *(*)(void *)) ServerPipline, &hp_args);
+        FreeByteString(&clientConfig.http.pipe);
+        hostConfig.pipe = NULL;
     }
 }
 
@@ -97,6 +70,7 @@ int ServerStart(const char *port) {
     ServerLoop(serverSocket);
     WSACleanup();
     pthread_exit(NULL);
+    return SOCKET_RUNTIME_SUCCESS;
 }
 
 void ServerLoop(SOCKET serverSocket) {
@@ -114,11 +88,11 @@ void ServerLoop(SOCKET serverSocket) {
             printf("accept failed: %d\n", WSAGetLastError());
             break;
         }
-        pthread_t   thread;
-        thread_args args;
+        pthread_t          thread;
+        handle_client_args args;
         args.clientSocket = clientSocket;
         args.addr_info    = addr;
-//        ServerHandleClient(&args);
+        //        ServerHandleClient(&args);
 
         args.mux = MemoryMutex;
         int rc = pthread_create(&thread, NULL, (void *(*)(void *)) ServerHandleClient, (void *) &args);
@@ -135,7 +109,7 @@ int ServerForward(SOCKET sockId, char *clientBuf, int clientBufLen) {
     iRes = send(sockId, clientBuf, clientBufLen, 0);
     if (iRes == SOCKET_ERROR) {
         printf("send failed with error: %d\n", WSAGetLastError());
-//        closesocket(sockId);
+        //        closesocket(sockId);
         return 1;
     }
     return 0;
@@ -190,7 +164,7 @@ int GetContentLength(char *recvBuf) {
             StrList *sub_res = FindSubStr(result->list[i], "Content-Length:");
             if (sub_res->length > 1) {
                 char *cl = StrStrim(sub_res->list[1]);
-//                char * temp;
+                //                char * temp;
                 content_len = strtol(cl, NULL, 10);
                 FreeStrList(&sub_res);
                 break;
@@ -203,6 +177,42 @@ int GetContentLength(char *recvBuf) {
     return content_len;
 }
 
+http_transform_pipe_s httpTransformPipeSCreate() {
+    http_transform_pipe_s new;
+    new.receiver       = hbc_init();
+    new.sender_sock_id = INVALID_SOCKET;
+    return new;
+}
 
+void ServerPipline(handle_pipline_args *args) {
+    http_base_config hostConfig = hbc_init();
+    hostConfig.sock_host = args->hostSocket;
 
-
+    http_base_config clientConfig = hbc_init();
+    clientConfig.sock_host = args->clientSocket;
+    int rCode;
+    printf("Respond :");
+    while (1) {
+        rCode = SocketRecv(&hostConfig, &args->mux);
+        if (rCode == SOCKET_RUNTIME_ERROR) {
+            closesocket(hostConfig.sock_host);
+            return;
+        } else if (rCode == SOCKET_RECEIVE_END) {
+            closesocket(hostConfig.sock_host);
+            printf("\n");
+            return;
+        }
+        clientConfig.pipe = hostConfig.pipe;
+        printf("%s", clientConfig.pipe->ch);
+        rCode = SocketSend(clientConfig);
+        if (0 != rCode) {
+            closesocket(clientConfig.sock_host);
+            closesocket(hostConfig.sock_host);
+            shutdown(clientConfig.sock_host, SD_SEND);
+            FreeByteString(&hostConfig.pipe);
+            return;
+        }
+        FreeByteString(&hostConfig.pipe);
+        clientConfig.pipe = NULL;
+    }
+}

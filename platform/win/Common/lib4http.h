@@ -21,14 +21,19 @@ typedef struct {
     ByteString *pipe;
 } *http_base_config_t, http_base_config;
 
+typedef struct {
+    char name[HOST_NAME_MAX_LEN];
+    char port[5];
+}host_db_s;
+
 typedef struct HttpClientConfig {
     http_base_config http;
-    char             hostname[HOST_NAME_MAX_LEN];
+    host_db_s host;
 } http_client_config, *http_client_config_t;
 
-int GetHostName(ByteString *recvBuf, char host_name[HOST_NAME_MAX_LEN]);
+int GetHostName(ByteString *recvBuf, host_db_s *hostDbS);
 
-http_base_config hmc_init();
+http_base_config hbc_init();
 
 http_base_config HttpConnect(http_client_config config);
 

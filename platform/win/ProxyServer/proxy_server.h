@@ -8,12 +8,22 @@
 #include "lib4str.h"
 #include "lib4http.h"
 
-typedef struct thread_args {
+typedef struct {
     SOCKET             clientSocket;
     struct sockaddr_in addr_info;
     pthread_mutex_t    mux;
-} thread_args;
+} handle_client_args;
 
+typedef struct {
+    SOCKET hostSocket;
+    SOCKET clientSocket;
+    pthread_mutex_t mux;
+}handle_pipline_args;
+
+typedef struct {
+    http_base_config receiver;
+    SOCKET sender_sock_id;
+}http_transform_pipe_s;
 
 int ServerStart(const char *port);
 
@@ -22,16 +32,8 @@ int ServerStart(const char *port);
  * TODO: complete the references
  * @return int 
  */
-void ServerHandleClient(thread_args *args);
+void ServerHandleClient(handle_client_args *args);
 
 void ServerLoop(SOCKET serverSocket);
 
-int SocketRecv(http_client_config_t config_t, pthread_mutex_t *MemoryMutex);
-
-int ServerForward(SOCKET sockId, char *clientBuf, int clientBufLen);
-
-int GetContentLength(char *recvBuf);
-
-void ConnectHost(SOCKET *connectSocket, char *host_name);
-
-void ServerVerbose(SOCKET clientSocket, SOCKET serverSocket, char *);
+void ServerPipline(handle_pipline_args *args);
