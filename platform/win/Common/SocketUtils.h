@@ -20,10 +20,10 @@
 #pragma comment (lib, "AdvApi32.lib")
 
 #ifndef RECV_BUFLEN
-#define RECV_BUFLEN 50
+#define RECV_BUFLEN 100
 #endif
-void hello_common();
 
+#define MAX_HEADER_LEN 8192
 
 /**
  * @brief Init socket to match the version socket 2.2

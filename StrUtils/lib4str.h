@@ -7,23 +7,36 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
-#define BYTE char
 #define BYTE_SIZE sizeof(char)
-#define INT_PTR long long
+#define ERROR_CODE int
+#define ByteListError (-1)
 
-typedef struct SubStr {
-    struct SubStr *next;
-    char substr[];
-} SubStr;
+typedef struct StrList {
+    char   **list;
+    size_t _msize;
+    size_t length;
+    char   origin[];
+} StrList;
 
-typedef struct SubStrChain {
-    SubStr *front;
-    SubStr *back;
-    int nums;
-    char origin[];
-} SubStrChain;
 
-SubStrChain *FindSubStr(const char *origin, const char *substr);
+typedef struct ByteString {
+    size_t len;
+    size_t _msize;
+    char   ch[];
+} ByteString;
+
+ERROR_CODE ByteStringAdd(ByteString **_dst, const char *_src, size_t _len);
+
+void FreeByteString(ByteString **byte_list);
+
+StrList *FindSubStr(const char *origin, const char *substr);
+
+void FreeStrList(StrList **pList);
+
+char *StrStrim(char *str);
+
+//char* ByteStrPopFront(ByteString *byte_str, size_t len);
 
 #endif //SIMPLEWEBPROXY_LIB4STR_H

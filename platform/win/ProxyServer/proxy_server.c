@@ -5,31 +5,33 @@
 #include "proxy_server.h"
 #include "SocketException.h"
 #include <pthread.h>
-int SocketRecv(SOCKET socketId, char **recvBuf, int* resBufLen, pthread_mutex_t *MemoryMutex) {
-    int nRes;
+
+
+int SocketRecv(http_client_config_t config_t, pthread_mutex_t *MemoryMutex) {
+    int  nRes;
     char buf[RECV_BUFLEN] = {0};
 
     pthread_mutex_lock(MemoryMutex);
-    *recvBuf = (char *) calloc(RECV_BUFLEN + 1, sizeof(char));
+//    *recvBuf = (char *) calloc(RECV_BUFLEN, sizeof(char));
     pthread_mutex_unlock(MemoryMutex);
 
     int recvBufLen = RECV_BUFLEN;
     int recvBufPtr = 0;
-
-    int forwardBufPtr = 0;
     do {
-        nRes = recv(socketId, buf, RECV_BUFLEN, 0);
+        nRes = recv(config_t->http.sock_host, buf, RECV_BUFLEN - 1, 0);
         if (nRes > 0) {
             int recvBufRemain = recvBufLen - recvBufPtr;
             if (recvBufRemain >= nRes) {
+
                 pthread_mutex_lock(MemoryMutex);
-                memcpy(*recvBuf + recvBufPtr, buf, nRes);
+                ByteStringAdd(&(config_t->http.pipe), buf, nRes);
                 pthread_mutex_unlock(MemoryMutex);
-                recvBufPtr += nRes;
-                *resBufLen = recvBufPtr;
+
             } else {
                 recvBufLen *= 2;
-                char *newBuf = (char *) calloc(recvBufLen + 1, sizeof(char));
+                pthread_mutex_lock(MemoryMutex);
+                char *newBuf = (char *) calloc(recvBufLen, sizeof(char));
+                pthread_mutex_unlock(MemoryMutex);
 
                 pthread_mutex_lock(MemoryMutex);
                 memcpy(newBuf, *recvBuf, recvBufPtr);
@@ -38,17 +40,14 @@ int SocketRecv(SOCKET socketId, char **recvBuf, int* resBufLen, pthread_mutex_t 
 
                 recvBufPtr += nRes;
                 free(*recvBuf);
-                *recvBuf = newBuf;
+                *recvBuf   = newBuf;
                 *resBufLen = recvBufPtr;
             }
-            ServerForward(socketId, *recvBuf, recvBufPtr, &forwardBufPtr);
-        }
-        else if (nRes == 0) {
+        } else if (nRes == 0) {
             printf("[LOG] End of Receiving\n");
             *resBufLen = recvBufPtr;
             break;
-        }
-        else {
+        } else {
             printf("[LOG] Receive Error.\n");
             return SOCKET_RUNTIME_ERROR;
         }
@@ -57,12 +56,17 @@ int SocketRecv(SOCKET socketId, char **recvBuf, int* resBufLen, pthread_mutex_t 
 }
 
 void ServerHandleClient(thread_args *args) {
-    SOCKET clientSocket = args->clientSocket;
-    struct sockaddr_in addr = args->addr_info;
-    pthread_mutex_t MemoryMutex = args->mux;
-    char *recvBuf;
-    int recvBufLen;
-    RUNTIME_CODE rCode = SocketRecv(clientSocket, &recvBuf, &recvBufLen, &MemoryMutex);
+    SOCKET             clientSocket = args->clientSocket;
+    struct sockaddr_in addr         = args->addr_info;
+    pthread_mutex_t    MemoryMutex  = args->mux;
+    char               *recvBuf;
+    int                recvBufLen;
+
+    // TODO FIX:
+//    RUNTIME_CODE       rCode        = SocketRecv(clientSocket,
+//                                                 &recvBuf,
+//                                                 &recvBufLen,
+//                                                 &MemoryMutex);
     if (rCode == SOCKET_RUNTIME_ERROR) {
         closesocket(clientSocket);
     }
@@ -84,7 +88,7 @@ void ServerHandleClient(thread_args *args) {
 
 int ServerStart(const char *port) {
     printf("Starting Server...\n");
-    SOCKET serverSocket;
+    SOCKET       serverSocket;
     RUNTIME_CODE nRes = SocketListening(port, &serverSocket);
     printf("Server Listening...\n");
     if (nRes == SOCKET_RUNTIME_ERROR) {
@@ -103,17 +107,17 @@ void ServerLoop(SOCKET serverSocket) {
     }
     while (1) {
         struct sockaddr_in addr;
-        int addrlen = sizeof addr;
-        SOCKET clientSocket = accept(serverSocket, (SOCKADDR *) &addr, &addrlen);
+        int                addrlen      = sizeof addr;
+        SOCKET             clientSocket = accept(serverSocket, (SOCKADDR *) &addr, &addrlen);
 
         if (clientSocket == INVALID_SOCKET) {
             printf("accept failed: %d\n", WSAGetLastError());
             break;
         }
-        pthread_t thread;
+        pthread_t   thread;
         thread_args args;
         args.clientSocket = clientSocket;
-        args.addr_info = addr;
+        args.addr_info    = addr;
 //        ServerHandleClient(&args);
 
         args.mux = MemoryMutex;
@@ -126,9 +130,79 @@ void ServerLoop(SOCKET serverSocket) {
     pthread_mutex_destroy(&MemoryMutex);
 }
 
-int ServerForward(SOCKET sockId, char *clientBuf, int clientBufLen, int *clientBufPtr) {
-
+int ServerForward(SOCKET sockId, char *clientBuf, int clientBufLen) {
+    int iRes;
+    iRes = send(sockId, clientBuf, clientBufLen, 0);
+    if (iRes == SOCKET_ERROR) {
+        printf("send failed with error: %d\n", WSAGetLastError());
+//        closesocket(sockId);
+        return 1;
+    }
     return 0;
 }
+
+
+void ConnectHost(SOCKET *connectSocket, char *host_name) {
+    struct addrinfo hints, *result = NULL;
+    ZeroMemory(&hints, sizeof(hints));
+
+    hints.ai_family   = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    int  iResult;
+    char *res = StrStrim(host_name);
+    iResult = getaddrinfo(res, "80", &hints, &result);
+    if (iResult != 0) {
+        printf("getaddrinfo failed with error: %d\n", iResult);
+        return;
+    }
+    *connectSocket = INVALID_SOCKET;
+    // Attempt to connect to an address until one succeeds
+    for (struct addrinfo *ptr = result; ptr != NULL; ptr = ptr->ai_next) {
+        // Create a SOCKET for connecting to server
+        *connectSocket = socket(ptr->ai_family, ptr->ai_socktype,
+                                ptr->ai_protocol);
+        if (*connectSocket == INVALID_SOCKET) {
+            printf("socket failed with error: %ld\n", WSAGetLastError());
+            return;
+        }
+        // Connect to server.
+        iResult = connect(*connectSocket, ptr->ai_addr, (int) ptr->ai_addrlen);
+        if (iResult == SOCKET_ERROR) {
+            closesocket(*connectSocket);
+            *connectSocket = INVALID_SOCKET;
+            continue;
+        }
+        break;
+    }
+    freeaddrinfo(result);
+    if (*connectSocket == INVALID_SOCKET) {
+        printf("Unable to connect to server!\n");
+    }
+}
+
+int GetContentLength(char *recvBuf) {
+    StrList *result     = FindSubStr(recvBuf, "\r\n");
+    int     content_len = 0;
+    if (result->length > 5) {
+        for (int i = 0; i < result->length; ++i) {
+            StrList *sub_res = FindSubStr(result->list[i], "Content-Length:");
+            if (sub_res->length > 1) {
+                char *cl = StrStrim(sub_res->list[1]);
+//                char * temp;
+                content_len = strtol(cl, NULL, 10);
+                FreeStrList(&sub_res);
+                break;
+            } else {
+                FreeStrList(&sub_res);
+            }
+        }
+    }
+    FreeStrList(&result);
+    return content_len;
+}
+
+
 
 
