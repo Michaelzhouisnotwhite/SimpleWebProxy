@@ -130,7 +130,7 @@ int SocketRecv(base_config_t config_t, pthread_mutex_t *MemoryMutex) {
         }
 
     } else if (nRes == 0) {
-        printf("[LOG] End of Receiving\n");
+//        printf("[LOG] End of Receiving\n");
         ZeroMemory(buf, sizeof(buf));
         return SOCKET_RECEIVE_END;
     } else {

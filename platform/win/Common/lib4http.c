@@ -75,27 +75,26 @@ Fin:
     FreeStrList(&by_transfer_encoding);
     return 0;
 }
+
 /* 返回ch字符在sign数组中的序号 */
-int getIndexOfSigns(char ch)
-{
-    if(ch >= '0' && ch <= '9')
-    {
+int getIndexOfSigns(char ch) {
+    if (ch >= '0' && ch <= '9') {
         return ch - '0';
     }
-    if(ch >= 'A' && ch <='F')
-    {
+    if (ch >= 'A' && ch <= 'F') {
         return ch - 'A' + 10;
     }
-    if(ch >= 'a' && ch <= 'f')
-    {
+    if (ch >= 'a' && ch <= 'f') {
         return ch - 'a' + 10;
     }
     return -1;
 }
+
 int check_chunk_buffer(ByteString *http_buffer) {
-    int     chunk_buffer_len = 0;
-    StrList *by_enter        = FindSubStr(http_buffer->ch, http_buffer->len, "\r\n");
-    int     full_chunk       = (int) by_enter->length - (int) by_enter->length % 2;
+    int chunk_buffer_len = 0;
+
+    StrList *by_enter  = FindSubStr(http_buffer->ch, http_buffer->len, "\r\n");
+    int     full_chunk = (int) by_enter->length - (int) by_enter->length % 2;
 
     for (int i = 0; i < full_chunk; i += 2) {
         chunk_buffer_len += getIndexOfSigns(by_enter->list[i][0]) + 2 * (int) strlen("\r\n");

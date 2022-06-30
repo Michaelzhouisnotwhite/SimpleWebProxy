@@ -9,14 +9,14 @@
 #include "lib4http.h"
 
 typedef struct {
-    SOCKET             clientSocket;
+    SOCKET             *clientSocket;
     struct sockaddr_in addr_info;
     pthread_mutex_t    mux;
 } handle_client_args;
 
 typedef struct {
-    SOCKET          hostSocket;
-    SOCKET          clientSocket;
+    SOCKET          *hostSocket;
+    SOCKET          *clientSocket;
     pthread_mutex_t mux;
 } handle_pipline_args;
 
@@ -29,6 +29,6 @@ int ServerStart(const char *port);
  */
 void ServerHandleClient(handle_client_args *args);
 
-void ServerLoop(SOCKET serverSocket);
+void ServerLoop(const SOCKET *serverSocket);
 
 void ServerPipline(handle_pipline_args *args);
