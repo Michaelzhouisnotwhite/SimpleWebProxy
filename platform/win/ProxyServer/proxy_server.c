@@ -125,9 +125,14 @@ void ServerPipline(handle_pipline_args *args) {
         rCode = SocketRecv(&hostConfig, &args->mux);
         if (rCode == SOCKET_RUNTIME_ERROR) {
             closesocket(hostConfig.sock_host);
+            closesocket(clientConfig.sock_host);
+            shutdown(hostConfig.sock_host, SD_BOTH);
+            shutdown(clientConfig.sock_host, SD_BOTH);
             return;
         } else if (rCode == SOCKET_RECEIVE_END) {
             closesocket(hostConfig.sock_host);
+            shutdown(hostConfig.sock_host, SD_BOTH);
+            shutdown(clientConfig.sock_host, SD_BOTH);
             printf("\n");
             return;
         }
@@ -136,6 +141,13 @@ void ServerPipline(handle_pipline_args *args) {
         if (0 != rCode) {
             goto send_err;
         }
+
+        StrList *res = FindSubStr(clientConfig.pipe->ch, clientConfig.pipe->len, "\r\n\r\n");
+
+        if (strlen(res->list[res->length - 1]) == 0) {
+//            shutdown(hostConfig.sock_host, SD_BOTH);
+        }
+
         FreeByteString(&hostConfig.pipe);
         clientConfig.pipe = NULL;
     }
