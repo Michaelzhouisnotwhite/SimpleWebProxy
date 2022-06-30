@@ -17,7 +17,7 @@ typedef struct ByteString {
     size_t len;
     size_t _msize;
     char   ch[];
-} ByteString;
+} ByteString, *byte_string_t;
 
 typedef struct StrList {
     char   **list;

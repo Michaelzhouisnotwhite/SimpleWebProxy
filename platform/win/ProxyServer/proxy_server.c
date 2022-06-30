@@ -67,14 +67,24 @@ void ServerHandleClient(handle_client_args *args) {
     pthread_exit(NULL);
 }
 
+
+
 int ServerStart(const char *port) {
 //    printf("Starting Server...\n");
     SOCKET       serverSocket;
     RUNTIME_CODE nRes = SocketListening(port, &serverSocket);
     printf("==== server is starting at 127.0.0.1:%s ====\n", port);
+
     if (nRes == SOCKET_RUNTIME_ERROR) {
         return SOCKET_RUNTIME_ERROR;
     }
+    u_long argp    = 1;
+    int    iResult = ioctlsocket(serverSocket, FIONBIO, &argp);
+
+    if (iResult != NO_ERROR) {
+        printf("ioctlsocket failed with error: %ld\n", iResult);
+    }
+
     ServerLoop(&serverSocket);
     shutdown(serverSocket, SD_SEND);
     WSACleanup();
@@ -95,7 +105,7 @@ void ServerLoop(const SOCKET *serverSocket) {
         SOCKET clientSocket = accept(*serverSocket, (SOCKADDR *) &addr, &addrlen);
 
         if (clientSocket == INVALID_SOCKET) {
-            printf("accept failed: %d\n", WSAGetLastError());
+//            printf("accept failed: %d\n", WSAGetLastError());
             continue;
         }
         pthread_t          thread;
@@ -145,7 +155,7 @@ void ServerPipline(handle_pipline_args *args) {
         StrList *res = FindSubStr(clientConfig.pipe->ch, clientConfig.pipe->len, "\r\n\r\n");
 
         if (strlen(res->list[res->length - 1]) == 0) {
-//            shutdown(hostConfig.sock_host, SD_BOTH);
+            goto send_err;
         }
 
         FreeByteString(&hostConfig.pipe);
