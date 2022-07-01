@@ -68,7 +68,6 @@ void ServerHandleClient(handle_client_args *args) {
 }
 
 
-
 int ServerStart(const char *port) {
 //    printf("Starting Server...\n");
     SOCKET       serverSocket;
@@ -78,6 +77,8 @@ int ServerStart(const char *port) {
     if (nRes == SOCKET_RUNTIME_ERROR) {
         return SOCKET_RUNTIME_ERROR;
     }
+
+    // turn to no-block mode
     u_long argp    = 1;
     int    iResult = ioctlsocket(serverSocket, FIONBIO, &argp);
 
@@ -85,44 +86,135 @@ int ServerStart(const char *port) {
         printf("ioctlsocket failed with error: %ld\n", iResult);
     }
 
-    ServerLoop(&serverSocket);
-    shutdown(serverSocket, SD_SEND);
+    ServerLoop(serverSocket);
     WSACleanup();
-    pthread_exit(NULL);
     return SOCKET_RUNTIME_SUCCESS;
 }
 
-void ServerLoop(const SOCKET *serverSocket) {
-    pthread_mutex_t MemoryMutex;
-    if (pthread_mutex_init(&MemoryMutex, NULL) != 0) {
-        printf("\n mutex init failed\n");
-        return;
-    }
+_Noreturn void ServerLoop(const SOCKET serverSocket) {
+
+    proxy_event_list_s event_list = proxy_event_list_init(8000);
     while (1) {
         struct sockaddr_in addr;
         int                addrlen = sizeof(addr);
 
-        SOCKET clientSocket = accept(*serverSocket, (SOCKADDR *) &addr, &addrlen);
+        SOCKET clientSocket = accept(serverSocket, (SOCKADDR *) &addr, &addrlen);
 
-        if (clientSocket == INVALID_SOCKET) {
-//            printf("accept failed: %d\n", WSAGetLastError());
-            continue;
+        if (clientSocket != INVALID_SOCKET) {
+            proxy_event_create(&event_list, clientSocket, 1);
+
+            printf("client connected: %s:%d\n", inet_ntoa(addr.sin_addr), addr.sin_port);
         }
-        pthread_t          thread;
-        handle_client_args args;
-        args.clientSocket = &clientSocket;
-        args.addr_info    = addr;
-        args.mux          = MemoryMutex;
-        int rc = pthread_create(&thread, NULL, (void *(*)(void *)) ServerHandleClient, (void *) &args);
-        if (rc) {
-            printf("Error:unable to create thread, %d\n", rc);
-            break;
+        for (proxy_event_ptr ptr = event_list.head; ptr != NULL; ptr = ptr->next) {
+            int i_res = handle_event(ptr);
+            handle_event_close(i_res, ptr);
         }
+        clear_closed_proxy_events(&event_list);
     }
-    pthread_exit(NULL);
-    pthread_mutex_destroy(&MemoryMutex);
 }
 
+void handle_event_close(int ev_no, proxy_event_ptr event) {
+    if (ev_no & EV_CLOSE_CLIENT) {
+        closesocket(event->client_socket_id);
+    }
+    if (ev_no & EV_CLOSE_SERVER) {
+        closesocket(event->server_socket_id);
+    }
+}
+
+int handle_event(proxy_event_ptr event) {
+    if (EV_RECEIVE_CLIENT & event->event_id) {
+        int i_res = socket_recv(event->client_socket_id, &event->client_buffer.buf);
+        switch (i_res) {
+            case SOCKET_RECV_NOT_KNOW_ERR:
+                return 1;
+            case SOCKET_RECV_ERROR: {
+                if (WSAGetLastError() != WSAEWOULDBLOCK) {
+                    event->is_closed = 1;
+                    return EV_CLOSE_CLIENT | EV_CLOSE_SERVER;
+                }
+            }
+            case SOCKET_RECV_END: {
+//                event->event_id -= EV_RECEIVE_CLIENT;
+                break;
+            }
+            default:
+                break;
+        }
+        int f_res = check_http_end(event->client_buffer.buf);
+        if (f_res == 1) {
+            if (event->event_id & EV_PARSE_HOST) {
+                event->server_host = host_info_init();
+                event->event_id ^= EV_PARSE_HOST;
+            }
+        }
+    }
+    if (!(EV_PARSE_HOST & event->event_id)) {
+        int i_res = GetHostName(event->client_buffer.buf, &event->server_host);
+        if (i_res == 0) {
+            event->event_id |= EV_PARSE_HOST;
+        }
+    }
+    if (EV_PARSE_HOST & event->event_id && !(EV_CONNECT_SERVER & event->event_id)) {
+        int i_res = socket_connect(event->server_host, &event->server_socket_id);
+        if (i_res == SOCKET_CONN_NOT_KNOWN_ERROR) {
+            return 1;
+        } else if (i_res == SOCKET_CONN_ERROR) {
+            if (WSAGetLastError() != WSAEWOULDBLOCK) {
+                event->is_closed = 1;
+                return EV_CLOSE_SERVER | EV_CLOSE_CLIENT;
+            }
+        } else if (i_res == SOCKET_CONN_SUCCESS) {
+            event->event_id |= EV_CONNECT_SERVER;
+            printf("client ready send to %s:%s\n", event->server_host.name, event->server_host.port);
+        }
+    }
+    if (EV_CONNECT_SERVER & event->event_id) {
+        int s_res = socket_send(event->server_socket_id, &event->client_buffer);
+        if (s_res != 0) {
+            if (WSAGetLastError() != WSAEWOULDBLOCK) {
+                event->is_closed = 1;
+                return EV_CLOSE_SERVER | EV_CLOSE_CLIENT;
+            }
+        }
+        event->event_id |= EV_RECEIVE_SERVER;
+
+        int r_res = socket_recv(event->server_socket_id, &event->server_buffer.buf);
+        switch (r_res) {
+            case SOCKET_RECV_NOT_KNOW_ERR:
+                return 1;
+            case SOCKET_RECV_ERROR: {
+                if (WSAGetLastError() != WSAEWOULDBLOCK) {
+                    event->is_closed = 1;
+                    return EV_CLOSE_SERVER | EV_CLOSE_CLIENT;
+                }
+            }
+//            case SOCKET_RECV_END: {
+//
+//                break;
+//            }
+            default:
+                break;
+        }
+        int c_res  = check_http_end(event->server_buffer.buf);
+        int ss_res = socket_send(event->client_socket_id, &event->server_buffer);
+        if (ss_res != 0) {
+            if (WSAGetLastError() != WSAEWOULDBLOCK) {
+                event->is_closed = 1;
+                return 1;
+            }
+        }
+        if (c_res == 0 && event->server_buffer.buf == NULL) {
+            if (event->event_id & EV_PARSE_HOST) {
+                event->server_host = host_info_init();
+                event->event_id ^= EV_PARSE_HOST;
+            }
+            return EV_CLOSE_CLIENT;
+        }
+
+    }
+    return 0;
+}
 
 void ServerPipline(handle_pipline_args *args) {
     base_config hostConfig = base_config_init();

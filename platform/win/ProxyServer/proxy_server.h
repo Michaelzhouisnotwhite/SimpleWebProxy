@@ -7,10 +7,15 @@
 #include "SocketUtils.h"
 #include "lib4str.h"
 #include "lib4http.h"
+#include "lib4proxy.h"
 
-#define EV_RECEIVE_CLIENT 0b0001
-#define EV_CONNECT_SERVER 0b0010
-#define EVENT_ID int
+
+#define  EV_CLOSE_CLIENT 0b1
+#define  EV_CLOSE_SERVER 0b10
+#define  EV_DESTROY 0b100
+
+
+
 //#define EV_RECEIVE_SERVER 0b0100
 
 typedef struct {
@@ -25,21 +30,6 @@ typedef struct {
     pthread_mutex_t mux;
 } handle_pipline_args;
 
-typedef struct {
-    byte_string_t buf;
-    int pos;
-}socket_buffer_s;
-
-
-typedef struct {
-    SOCKET        client_socket_id;
-    SOCKET        server_socket_id;
-    host_info_s   server_host;
-    socket_buffer_s client_buffer;
-    socket_buffer_s server_buffer;
-    EVENT_ID event_id;
-} proxy_event_s;
-
 
 int ServerStart(const char *port);
 
@@ -49,6 +39,11 @@ int ServerStart(const char *port);
  */
 void ServerHandleClient(handle_client_args *args);
 
-void ServerLoop(const SOCKET *serverSocket);
+_Noreturn void ServerLoop(SOCKET serverSocket);
+
+void handle_event_close(int ev_no, proxy_event_ptr event);
 
 void ServerPipline(handle_pipline_args *args);
+
+int handle_event(proxy_event_ptr event);
+

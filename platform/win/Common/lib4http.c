@@ -12,6 +12,13 @@ client_config client_config_init() {
     return new;
 }
 
+host_info_s host_info_init() {
+    host_info_s new;
+    ZeroMemory(new.name, sizeof(new.name));
+    ZeroMemory(new.port, sizeof(new.port));
+    return new;
+}
+
 base_config base_config_init() {
     base_config new;
     new.pipe       = NULL;
@@ -21,6 +28,9 @@ base_config base_config_init() {
 }
 
 int GetHostName(ByteString *recvBuf, host_info_s *host_info) {
+    if (recvBuf == NULL) {
+        return 1;
+    }
     StrList *result = FindSubStr(recvBuf->ch, recvBuf->len, "\r\n");
     if (result->length > 5) {
         for (int i = 0; i < result->length; ++i) {
@@ -112,3 +122,15 @@ int get_header_length(ByteString *http_buffer) {
     return (int) (strlen(by_double_enter->list[0]) + strlen("\r\n\r\n"));
 }
 
+int check_http_end(ByteString *http_buffer) {
+    StrList *by_double_enter = FindSubStr(http_buffer->ch, http_buffer->len, "\r\n\r\n");
+    if (strlen(by_double_enter->list[by_double_enter->length - 1]) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+int check_htp_protocol(ByteString *buffer) {
+
+    return 0;
+}

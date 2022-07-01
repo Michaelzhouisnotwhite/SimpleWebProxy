@@ -1,6 +1,6 @@
 project(ProxyServer)
 
-add_library(${PROJECT_NAME} proxy_server.c proxy_server.h)
+add_library(${PROJECT_NAME} proxy_server.c proxy_server.h lib4proxy.c lib4proxy.h)
 add_library(lib::proxy_server ALIAS ${PROJECT_NAME})
 
 # LIBS

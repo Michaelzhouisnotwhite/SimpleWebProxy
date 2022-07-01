@@ -40,6 +40,8 @@ base_config base_config_init();
 
 int check_base_config(base_config config);
 
+host_info_s host_info_init();
+
 client_config client_config_init();
 
 int check_http_header(base_config_t config);
@@ -48,4 +50,7 @@ int check_chunk_buffer(ByteString *http_buffer);
 
 int get_header_length(ByteString *http_buffer);
 
+int check_http_end(ByteString *http_buffer);
+
+int check_htp_protocol(ByteString *buffer);
 #endif //SIMPLEWEBPROXY_LIB4HTTP_H
