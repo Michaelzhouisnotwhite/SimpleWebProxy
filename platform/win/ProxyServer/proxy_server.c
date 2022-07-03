@@ -84,6 +84,7 @@ int ServerStart(const char *port) {
 
     if (iResult != NO_ERROR) {
         printf("ioctlsocket failed with error: %ld\n", iResult);
+        exit(-1);
     }
 
     ServerLoop(serverSocket);
@@ -94,6 +95,7 @@ int ServerStart(const char *port) {
 _Noreturn void ServerLoop(const SOCKET serverSocket) {
 
     proxy_event_list_s event_list = proxy_event_list_init(8000);
+
     while (1) {
         struct sockaddr_in addr;
         int                addrlen = sizeof(addr);
@@ -108,9 +110,17 @@ _Noreturn void ServerLoop(const SOCKET serverSocket) {
         for (proxy_event_ptr ptr = event_list.head; ptr != NULL; ptr = ptr->next) {
             int i_res = handle_event(ptr);
             handle_event_close(i_res, ptr);
+//            pthread_create(NULL, NULL, (void *(*)(void *)) create_event_thread, ptr);
         }
         clear_closed_proxy_events(&event_list);
     }
+}
+
+void create_event_thread(proxy_event_ptr ptr) {
+    pthread_mutex_lock(&ptr->mux);
+    int i_res = handle_event(ptr);
+    handle_event_close(i_res, ptr);
+    pthread_mutex_unlock(&ptr->mux);
 }
 
 void handle_event_close(int ev_no, proxy_event_ptr event) {
@@ -123,50 +133,46 @@ void handle_event_close(int ev_no, proxy_event_ptr event) {
 }
 
 int handle_event(proxy_event_ptr event) {
-    if (EV_RECEIVE_CLIENT & event->event_id) {
-        int i_res = socket_recv(event->client_socket_id, &event->client_buffer.buf);
-        switch (i_res) {
-            case SOCKET_RECV_NOT_KNOW_ERR:
-                return 1;
-            case SOCKET_RECV_ERROR: {
-                if (WSAGetLastError() != WSAEWOULDBLOCK) {
-                    event->is_closed = 1;
-                    return EV_CLOSE_CLIENT | EV_CLOSE_SERVER;
-                }
-            }
-            case SOCKET_RECV_END: {
-//                event->event_id -= EV_RECEIVE_CLIENT;
-                break;
-            }
-            default:
-                break;
+    int res = socket_recv(event->client_socket_id, &event->client_buffer.buf);
+    if (res == SOCKET_RECV_NOT_KNOW_ERR) {
+        return 1;
+    } else if (res == SOCKET_RECV_ERROR) {
+        if (WSAGetLastError() != WSAEWOULDBLOCK) {
+            event->is_closed = 1;
+            return EV_CLOSE_CLIENT | EV_CLOSE_SERVER;
         }
+    }
+    if (!(event->event_id & EV_CLIENT_END)) {
         int f_res = check_http_end(event->client_buffer.buf);
         if (f_res == 1) {
-            if (event->event_id & EV_PARSE_HOST) {
-                event->server_host = host_info_init();
-                event->event_id ^= EV_PARSE_HOST;
-            }
+            event->event_id |= EV_CLIENT_END;
         }
     }
-    if (!(EV_PARSE_HOST & event->event_id)) {
+    if (!(EV_DONE_PARSE_HOST & event->event_id)) {
         int i_res = GetHostName(event->client_buffer.buf, &event->server_host);
         if (i_res == 0) {
-            event->event_id |= EV_PARSE_HOST;
+            event->event_id |= EV_DONE_PARSE_HOST;
         }
     }
-    if (EV_PARSE_HOST & event->event_id && !(EV_CONNECT_SERVER & event->event_id)) {
-        int i_res = socket_connect(event->server_host, &event->server_socket_id);
-        if (i_res == SOCKET_CONN_NOT_KNOWN_ERROR) {
-            return 1;
-        } else if (i_res == SOCKET_CONN_ERROR) {
-            if (WSAGetLastError() != WSAEWOULDBLOCK) {
-                event->is_closed = 1;
-                return EV_CLOSE_SERVER | EV_CLOSE_CLIENT;
+    if (EV_DONE_PARSE_HOST & event->event_id && !(EV_CONNECT_SERVER & event->event_id) ||
+        EV_HANDLE_REDIRECT_RESPOND & event->event_id) {
+        if (!(event->event_id & EV_CONNECT_READY)) {
+            socket_connect_establish(&event->server_host);
+            event->event_id |= EV_CONNECT_READY;
+        }
+        if (event->event_id & EV_CONNECT_READY) {
+            int i_res = socket_connect(event->server_host, &event->server_socket_id);
+            if (i_res == SOCKET_CONN_ERROR) {
+//                if (WSAGetLastError() != WSAEWOULDBLOCK) {
+//                    event->is_closed = 1;
+//                    return EV_CLOSE_SERVER | EV_CLOSE_CLIENT;
+//                }
+                printf("waiting for connection...\n");
+            } else if (i_res == SOCKET_CONN_SUCCESS) {
+                event->event_id |= EV_CONNECT_SERVER;
+                event->event_id |= EV_READY_HEADER_CHECK;
+                printf("connection established: %s:%s\n", event->server_host.name, event->server_host.port);
             }
-        } else if (i_res == SOCKET_CONN_SUCCESS) {
-            event->event_id |= EV_CONNECT_SERVER;
-            printf("client ready send to %s:%s\n", event->server_host.name, event->server_host.port);
         }
     }
     if (EV_CONNECT_SERVER & event->event_id) {
@@ -175,9 +181,11 @@ int handle_event(proxy_event_ptr event) {
             if (WSAGetLastError() != WSAEWOULDBLOCK) {
                 event->is_closed = 1;
                 return EV_CLOSE_SERVER | EV_CLOSE_CLIENT;
+            } else {
+
             }
         }
-        event->event_id |= EV_RECEIVE_SERVER;
+//        event->event_id |= EV_RECEIVE_SERVER;
 
         int r_res = socket_recv(event->server_socket_id, &event->server_buffer.buf);
         switch (r_res) {
@@ -188,31 +196,55 @@ int handle_event(proxy_event_ptr event) {
                     event->is_closed = 1;
                     return EV_CLOSE_SERVER | EV_CLOSE_CLIENT;
                 }
+                break;
             }
-//            case SOCKET_RECV_END: {
-//
-//                break;
-//            }
+            case SOCKET_RECV_END: {
+                event->event_id |= EV_SERVER_END;
+                break;
+            }
             default:
                 break;
         }
-        int c_res  = check_http_end(event->server_buffer.buf);
-        int ss_res = socket_send(event->client_socket_id, &event->server_buffer);
-        if (ss_res != 0) {
-            if (WSAGetLastError() != WSAEWOULDBLOCK) {
-                event->is_closed = 1;
-                return 1;
+
+        if (event->server_buffer.buf != NULL && (event->event_id & EV_CONNECT_SERVER) &&
+            !(event->event_id & EV_HEADER_CHECKED)) {
+            proxy_event_check_header(event);
+            printf("respond content-length: %d\n", event->respond_header_info.content_length);
+            printf("respond status: %d\n", event->respond_header_info.status_code);
+            printf("respond header length: %d\n", event->respond_header_info.header_length);
+        }
+        if (event->event_id & EV_HEADER_CHECKED) {
+            if (event->respond_header_info.status_code == -1) {
+                return EV_CLOSE_CLIENT | EV_CLOSE_SERVER;
+            } else if (event->respond_header_info.status_code < 400 && event->respond_header_info.status_code > 300) {
+                event->event_id |= EV_HANDLE_REDIRECT_RESPOND;
             }
         }
-        if (c_res == 0 && event->server_buffer.buf == NULL) {
-            if (event->event_id & EV_PARSE_HOST) {
-                event->server_host = host_info_init();
-                event->event_id ^= EV_PARSE_HOST;
+        if (!(event->event_id & EV_SERVER_END) && event->event_id & EV_HEADER_CHECKED) {
+            int prs_res = proxy_res_send(event);
+            if (prs_res != 0) {
+                event->is_closed = 1;
+                return EV_CLOSE_SERVER | EV_CLOSE_CLIENT;
             }
-            return EV_CLOSE_CLIENT;
         }
 
+        if (event->event_id & EV_SERVER_END && event->server_buffer.buf == NULL) {
+            if (event->event_id & EV_DONE_PARSE_HOST) {
+                event->server_host = host_info_init();
+//                event->event_id ^= EV_DONE_PARSE_HOST;
+            }
+            if (!(event->event_id & EV_HANDLE_REDIRECT_RESPOND)) {
+                event->is_closed = 1;
+                return EV_CLOSE_CLIENT | EV_CLOSE_SERVER;
+            }
+            if (event->event_id & EV_HANDLE_REDIRECT_RESPOND) {
+                event->event_id = 0;
+                return EV_CLOSE_SERVER;
+            }
+            event->event_id = 0;
+        }
     }
+
     return 0;
 }
 

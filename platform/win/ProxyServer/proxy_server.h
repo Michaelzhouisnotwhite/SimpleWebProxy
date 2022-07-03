@@ -47,3 +47,5 @@ void ServerPipline(handle_pipline_args *args);
 
 int handle_event(proxy_event_ptr event);
 
+void create_event_thread(proxy_event_ptr ptr);
+

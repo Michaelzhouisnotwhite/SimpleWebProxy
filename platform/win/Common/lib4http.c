@@ -16,6 +16,8 @@ host_info_s host_info_init() {
     host_info_s new;
     ZeroMemory(new.name, sizeof(new.name));
     ZeroMemory(new.port, sizeof(new.port));
+    new.host_sock_len = 0;
+    new.host_sock_pos = 0;
     return new;
 }
 
@@ -62,6 +64,13 @@ int check_base_config(base_config config) {
         return 1;
     }
     return 0;
+}
+
+http_header_info_s http_header_info_init() {
+    http_header_info_s new;
+    new.content_length = -1;
+    new.status_code    = -1;
+    return new;
 }
 
 int check_http_header(base_config_t config) {
@@ -123,6 +132,9 @@ int get_header_length(ByteString *http_buffer) {
 }
 
 int check_http_end(ByteString *http_buffer) {
+    if (http_buffer == NULL) {
+        return 0;
+    }
     StrList *by_double_enter = FindSubStr(http_buffer->ch, http_buffer->len, "\r\n\r\n");
     if (strlen(by_double_enter->list[by_double_enter->length - 1]) == 0) {
         return 1;
@@ -130,7 +142,17 @@ int check_http_end(ByteString *http_buffer) {
     return 0;
 }
 
-int check_htp_protocol(ByteString *buffer) {
-
-    return 0;
+int check_respond_status_code(ByteString *buffer) {
+    char *first_line = strstr(buffer->ch, "\r\n");
+    if (first_line != NULL) {
+        StrList *sub_strs    = FindSubStr(buffer->ch, first_line - buffer->ch - strlen("\r\n"), " ");
+        char    protocol[50] = {0};
+        memcpy(protocol, sub_strs->list[0], 7);
+        if (sub_strs->length > 2 && strcmp("HTTP/1.", protocol) == 0) {
+            char *static_code = sub_strs->list[1];
+            return strtol(static_code, NULL, 10);
+        }
+    }
+    return -1;
 }
+
